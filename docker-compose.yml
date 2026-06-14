@@ -1,0 +1,102 @@
+services:
+
+  redis:
+    image: redis:7-alpine
+    container_name: notifty-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis_data:/data
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: notifty-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: notification_db
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Schema + demo seed are applied automatically on first boot.
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+
+  enricher:
+    build: .
+    container_name: notifty-enricher
+    command: python -m app.enrichers.worker
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DB_HOST: postgres
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  engine:
+    build: .
+    container_name: notifty-engine
+    command: python -m app.engine.worker
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DB_HOST: postgres
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  delivery:
+    build: .
+    container_name: notifty-delivery
+    command: python -m app.delivery.worker
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DB_HOST: postgres
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  engagement:
+    build: .
+    container_name: notifty-engagement
+    command: python -m app.engagement.scheduler
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DB_HOST: postgres
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  postgres_data:
