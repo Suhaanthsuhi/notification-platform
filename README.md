@@ -7,7 +7,7 @@ crash recovery, and a built-in campaign engine.
 
 **Stack:** Python 3.11 · Redis Streams · PostgreSQL · Firebase Cloud Messaging · Docker · Supervisord
 
-![CI](https://github.com/OWNER/notifty/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/Suhaanthsuhi/notification-platform/actions/workflows/ci.yml/badge.svg)
 
 ---
 
