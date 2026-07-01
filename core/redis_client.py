@@ -92,7 +92,6 @@ class RedisClient:
             self._client = redis.from_url(
                 self.redis_url,
                 decode_responses=True,
-                ssl_cert_reqs=None,
                 socket_timeout=5,
                 socket_connect_timeout=5,
                 health_check_interval=30,

@@ -5,11 +5,11 @@
 # A distributed, event-driven notification system built on Redis Streams,
 # PostgreSQL and Firebase Cloud Messaging. This script prepares everything
 # needed to run the pipeline (enricher → engine → delivery + engagement)
-# locally:
+# locally using uv:
 #
-#   1. Verifies the required tooling (Python 3.11, pip)
-#   2. Creates an isolated virtual environment (.venv)
-#   3. Installs Python dependencies from requirements.txt
+#   1. Verifies uv is installed
+#   2. Installs Python 3.13 and creates an isolated virtual environment (.venv)
+#   3. Installs Python dependencies from pyproject.toml / uv.lock
 #   4. Scaffolds a .env file from sensible defaults (if missing)
 #   5. Reminds you to provide Firebase credentials (service-account.json)
 #   6. Optionally starts Redis + PostgreSQL via Docker for local dev
@@ -18,7 +18,6 @@
 #   chmod +x setup.sh
 #   ./setup.sh                 # full setup
 #   ./setup.sh --with-infra    # also start local Redis + PostgreSQL in Docker
-#   ./setup.sh --no-venv       # install into the current Python environment
 #
 set -euo pipefail
 
@@ -41,11 +40,9 @@ cd "$PROJECT_ROOT"
 # Parse flags
 # ----------------------------------------------------------------------------
 WITH_INFRA=0
-USE_VENV=1
 for arg in "$@"; do
   case "$arg" in
     --with-infra) WITH_INFRA=1 ;;
-    --no-venv)    USE_VENV=0 ;;
     -h|--help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//' | sed -n '2,30p'
       exit 0
@@ -55,65 +52,24 @@ for arg in "$@"; do
 done
 
 # ----------------------------------------------------------------------------
-# 1. Locate a suitable Python interpreter (3.11.x preferred)
+# 1. Verify uv
 # ----------------------------------------------------------------------------
-REQUIRED_PY="$(cat .python-version 2>/dev/null | tr -d '[:space:]' || echo '3.11.8')"
-REQUIRED_MAJOR_MINOR="${REQUIRED_PY%.*}"   # e.g. 3.11
-
-find_python() {
-  for candidate in "python${REQUIRED_MAJOR_MINOR}" python3.11 python3 python; do
-    if command -v "$candidate" >/dev/null 2>&1; then
-      if "$candidate" -c 'import sys; exit(0 if sys.version_info[:2]==(3,11) else 1)' 2>/dev/null; then
-        echo "$candidate"; return 0
-      fi
-    fi
-  done
-  # Fall back to any python3 if no exact 3.11 found
-  command -v python3 >/dev/null 2>&1 && { echo python3; return 0; }
-  return 1
-}
-
-info "Checking for Python ${REQUIRED_MAJOR_MINOR} ..."
-if ! PYTHON="$(find_python)"; then
-  err "No Python interpreter found. Please install Python ${REQUIRED_PY}."
+info "Checking for uv ..."
+if ! command -v uv >/dev/null 2>&1; then
+  err "uv not found. Install it with: curl -LsSf https://astral.sh/uv/install.sh | sh"
   exit 1
 fi
-PY_VERSION="$("$PYTHON" -V 2>&1)"
-if ! "$PYTHON" -c 'import sys; exit(0 if sys.version_info[:2]==(3,11) else 1)' 2>/dev/null; then
-  warn "Using ${PY_VERSION} — project targets Python ${REQUIRED_PY}. Continuing anyway."
-else
-  ok "Found ${PY_VERSION} (${PYTHON})"
-fi
+ok "Found $(uv --version)"
 
 # ----------------------------------------------------------------------------
-# 2. Virtual environment
+# 2. Install Python 3.13 and sync dependencies
 # ----------------------------------------------------------------------------
-if [ "$USE_VENV" -eq 1 ]; then
-  if [ ! -d .venv ]; then
-    info "Creating virtual environment at .venv ..."
-    "$PYTHON" -m venv .venv
-    ok "Virtual environment created"
-  else
-    ok "Virtual environment already exists (.venv)"
-  fi
-  # shellcheck disable=SC1091
-  source .venv/bin/activate
-  PYTHON="python"
-else
-  warn "Skipping virtualenv (--no-venv); installing into current environment"
-fi
+info "Installing Python 3.13 and syncing dependencies ..."
+uv sync
+ok "Dependencies installed into .venv"
 
 # ----------------------------------------------------------------------------
-# 3. Install dependencies
-# ----------------------------------------------------------------------------
-info "Upgrading pip ..."
-"$PYTHON" -m pip install --upgrade pip >/dev/null
-info "Installing Python dependencies from requirements.txt ..."
-"$PYTHON" -m pip install -r requirements.txt
-ok "Dependencies installed"
-
-# ----------------------------------------------------------------------------
-# 4. Environment file (.env)
+# 3. Environment file (.env)
 # ----------------------------------------------------------------------------
 if [ ! -f .env ]; then
   if [ -f .env.example ]; then
@@ -147,16 +103,12 @@ else
 fi
 
 # ----------------------------------------------------------------------------
-# 5. Firebase service account
+# 4. Firebase service account
 # ----------------------------------------------------------------------------
-# The app reads the credential as a JSON *string* from FIREBASE_SERVICE_ACCOUNT_JSON.
-# If a service-account.json file is present and the env var is empty, embed it.
 if [ -f service-account.json ]; then
   if grep -qE '^FIREBASE_SERVICE_ACCOUNT_JSON=\s*$' .env 2>/dev/null; then
     info "Embedding service-account.json into .env ..."
-    # Compact the JSON to a single line and escape for safe single-quoting
-    SA_JSON="$("$PYTHON" -c 'import json,sys; print(json.dumps(json.load(open("service-account.json"))))')"
-    # Remove the empty line and append the populated one
+    SA_JSON="$(uv run python -c 'import json,sys; print(json.dumps(json.load(open("service-account.json"))))')"
     grep -v '^FIREBASE_SERVICE_ACCOUNT_JSON=' .env > .env.tmp && mv .env.tmp .env
     printf "FIREBASE_SERVICE_ACCOUNT_JSON='%s'\n" "$SA_JSON" >> .env
     ok "Firebase credentials embedded into .env"
@@ -172,7 +124,7 @@ else
 fi
 
 # ----------------------------------------------------------------------------
-# 6. Optional local infrastructure (Redis + PostgreSQL via Docker)
+# 5. Optional local infrastructure (Redis + PostgreSQL via Docker)
 # ----------------------------------------------------------------------------
 if [ "$WITH_INFRA" -eq 1 ]; then
   if command -v docker >/dev/null 2>&1; then
@@ -211,16 +163,17 @@ echo
 ok "Setup complete!"
 echo
 info "Next steps:"
-if [ "$USE_VENV" -eq 1 ]; then
-  echo "   source .venv/bin/activate"
-fi
 cat <<'STEPS'
 
    # Run the pipeline stages (separate terminals):
+   uv run python -m app.enrichers.worker
+   uv run python -m app.engine.worker
+   uv run python -m app.delivery.worker
+   uv run python -m app.engagement.scheduler
+
+   # Or activate the venv and run directly:
+   source .venv/bin/activate
    python -m app.enrichers.worker
-   python -m app.engine.worker
-   python -m app.delivery.worker
-   python -m app.engagement.scheduler
 
    # Or run everything in one container via Supervisord:
    supervisord -n -c supervisord.conf
@@ -229,6 +182,6 @@ cat <<'STEPS'
    docker-compose up
 
    # Inject a test event / inspect streams:
-   python scripts/produce_test_event.py
-   python scripts/consume_test_stream.py
+   uv run python scripts/produce_test_event.py
+   uv run python scripts/consume_test_stream.py
 STEPS

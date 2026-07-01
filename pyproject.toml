@@ -1,0 +1,25 @@
+[project]
+name = "notification-platform"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "asyncpg>=0.31.0",
+    "email-validator>=2.3.0",
+    "firebase-admin>=7.1.0",
+    "httpx>=0.28.1",
+    "msgpack>=1.1.2",
+    "pydantic>=2.12.5",
+    "pyjwt>=2.11.0",
+    "python-dotenv>=1.2.1",
+    "redis>=7.1.1",
+    "simplejson>=3.20.2",
+    "sqlalchemy>=2.0.46",
+    "structlog>=25.5.0",
+    "ulid-py>=1.1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+]

@@ -5,7 +5,7 @@ turning domain events into timely, personalized, multi-language push notificatio
 via **Firebase Cloud Messaging (FCM)**, with at-least-once delivery, idempotency,
 crash recovery, and a built-in campaign engine.
 
-**Stack:** Python 3.11 · Redis Streams · PostgreSQL · Firebase Cloud Messaging · Docker · Supervisord
+**Stack:** Python 3.13 · uv · Redis Streams · PostgreSQL · Firebase Cloud Messaging · Docker · Supervisord
 
 ![CI](https://github.com/Suhaanthsuhi/notification-platform/actions/workflows/ci.yml/badge.svg)
 
@@ -289,14 +289,14 @@ notifty/
 ├── db/                     # schema.sql + seed.sql (generic demo data model)
 ├── scripts/                # produce / inspect helpers
 ├── Dockerfile · docker-compose.yml · supervisord.conf
-└── setup.sh · .env.example · requirements.txt
+└── setup.sh · .env.example · pyproject.toml · uv.lock
 ```
 
 ---
 
 ## Deployment
 
-The repo ships a multi-stage `Dockerfile` (Python 3.11 slim + Supervisord) and a
+The repo ships a `Dockerfile` (Python 3.13 slim via uv + Supervisord) and a
 `docker-compose.yml` for multi-container deployment. CI (GitHub Actions) builds
 the image and runs the contract validation on every push/PR. Bring your own
 orchestrator (ECS, Kubernetes, Nomad, …) — the workers are plain stateless
